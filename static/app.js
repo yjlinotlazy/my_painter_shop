@@ -3,11 +3,14 @@
 const $ = (selector) => document.querySelector(selector);
 const canvas = $("#paintCanvas");
 const ctx = canvas.getContext("2d");
+const PALETTE_STORAGE_KEY = "my-painter-shop-palettes";
 
 const state = {
   config: null,
   lineImage: null,
   palette: [],
+  paletteGroups: [],
+  activePaletteGroupId: null,
   activeColorId: null,
   strokes: [],
   undo: [],
@@ -17,10 +20,28 @@ const state = {
   paper: "square",
   zoom: 1,
   zoomMode: "fit",
+  backgroundColor: "#ffffff",
 };
 
 function uid() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+}
+
+function savePalettes() {
+  try {
+    localStorage.setItem(PALETTE_STORAGE_KEY, JSON.stringify(state.paletteGroups));
+  } catch { /* local storage may be unavailable */ }
+}
+
+function loadPalettes() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PALETTE_STORAGE_KEY) || "[]");
+    if (!Array.isArray(saved)) return;
+    state.paletteGroups = saved.filter((group) => group && Array.isArray(group.colors));
+    state.activePaletteGroupId = state.paletteGroups[0]?.id || null;
+    state.palette = state.paletteGroups[0]?.colors || [];
+    state.activeColorId = state.palette[0]?.id || null;
+  } catch { /* ignore invalid or unavailable saved data */ }
 }
 
 async function api(path, options = {}) {
@@ -50,8 +71,11 @@ function setZoom(value, mode = "manual") {
 
 function fitCanvas() {
   const stage = $("#canvasStage");
-  const availableWidth = Math.max(1, stage.clientWidth - 64);
-  const availableHeight = Math.max(1, stage.clientHeight - 64);
+  const style = getComputedStyle(stage);
+  const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  const verticalPadding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+  const availableWidth = Math.max(1, stage.clientWidth - horizontalPadding);
+  const availableHeight = Math.max(1, stage.clientHeight - verticalPadding);
   setZoom(Math.min(availableWidth / canvas.width, availableHeight / canvas.height), "fit");
 }
 
@@ -89,7 +113,7 @@ function updateHistoryButtons() {
 }
 
 function drawPaper(context, width, height) {
-  context.fillStyle = "#ffffff";
+  context.fillStyle = state.backgroundColor;
   context.fillRect(0, 0, width, height);
 }
 
@@ -185,41 +209,67 @@ function render() {
 function renderPalette() {
   const container = $("#palette");
   container.replaceChildren();
-  for (const item of state.palette) {
+  const selector = $("#paletteSelector");
+  selector.replaceChildren();
+  state.paletteGroups.forEach((group) => selector.add(new Option(group.name, group.id)));
+  selector.value = state.activePaletteGroupId || "";
+  renderPaletteCards();
+  const group = state.paletteGroups.find((item) => item.id === state.activePaletteGroupId);
+  for (const item of (group?.colors || [])) {
     const row = document.createElement("div");
     row.className = `palette-row${item.id === state.activeColorId ? " active" : ""}`;
     row.innerHTML = `
-      <input type="color" value="${item.color}" aria-label="${item.code} 的颜色">
-      <input type="text" value="${escapeHtml(item.code)}" aria-label="色号">
-      <button class="delete-color" title="删除颜色">×</button>`;
+      <span class="palette-swatch" style="background:${item.color}" aria-label="${item.color}"></span>
+      <span class="palette-code">${escapeHtml(item.code)}</span>`;
     row.addEventListener("click", () => setActiveColor(item.id));
-    const colorInput = row.querySelector('input[type="color"]');
-    const codeInput = row.querySelector('input[type="text"]');
-    colorInput.addEventListener("input", (event) => {
-      item.color = event.target.value;
-      render();
-      updateUsedColors();
-    });
-    codeInput.addEventListener("input", (event) => {
-      item.code = event.target.value.trim() || "未命名";
-      updateActiveLabel();
-      updateUsedColors();
-    });
-    row.querySelector("button").addEventListener("click", (event) => {
-      event.stopPropagation();
-      if (state.strokes.some((stroke) => stroke.colorId === item.id)) {
-        setStatus("这个颜色已经用于画面，请先全局替换它。", true);
-        return;
-      }
-      state.palette = state.palette.filter((color) => color.id !== item.id);
-      if (state.activeColorId === item.id) state.activeColorId = state.palette[0]?.id || null;
-      renderPalette();
-      updateUsedColors();
-    });
-    container.append(row);
+      container.append(row);
   }
   $("#paletteEmpty").hidden = state.palette.length > 0;
   updateActiveLabel();
+}
+
+function renderPaletteCards() {
+  const cards = $("#paletteCards");
+  if (!cards) return;
+  cards.replaceChildren();
+  const groups = document.body.classList.contains("palette-page")
+    ? state.paletteGroups
+    : state.paletteGroups.filter((group) => group.id === state.activePaletteGroupId);
+  groups.forEach((group) => {
+    const card = document.createElement("div");
+    card.className = "palette-card";
+    card.innerHTML = `<strong>${escapeHtml(group.name)}</strong><span class="palette-card-actions"><button type="button" class="rename-palette">重命名</button><button type="button" class="delete-palette">删除</button></span><div class="palette-card-colors">${group.colors.map((item) => `<button type="button" class="palette-card-color" style="background:${item.color}" title="${escapeHtml(item.code)}">${escapeHtml(item.code)}</button>`).join("")}</div>`;
+    card.querySelector(".rename-palette").addEventListener("click", () => {
+      const name = window.prompt("调色板名称", group.name);
+      if (name?.trim()) { group.name = name.trim(); savePalettes(); renderPalette(); }
+    });
+    card.querySelector(".delete-palette").addEventListener("click", () => {
+      if (!window.confirm(`确定删除“${group.name}”吗？`)) return;
+      state.paletteGroups = state.paletteGroups.filter((item) => item.id !== group.id);
+      if (state.activePaletteGroupId === group.id) state.activePaletteGroupId = state.paletteGroups[0]?.id || null;
+      state.palette = state.paletteGroups.find((item) => item.id === state.activePaletteGroupId)?.colors || [];
+      savePalettes(); renderPalette(); updateUsedColors();
+    });
+    card.querySelectorAll(".palette-card-color").forEach((button, index) => button.addEventListener("click", () => selectPaletteColor(group.colors[index])));
+    cards.append(card);
+  });
+}
+
+function selectPaletteColor(item) {
+  state.activeColorId = item.id;
+  updateActiveLabel();
+  renderPaletteCards();
+  $("#paletteRgbPanel").hidden = false;
+  $("#selectedPaletteColor").textContent = `${item.code} · ${item.color}`;
+  $("#paletteColorPreview").style.backgroundColor = item.color;
+  const [r, g, b] = item.color.match(/[a-f\d]{2}/gi).map((value) => parseInt(value, 16));
+  $("#redValue").value = r; $("#greenValue").value = g; $("#blueValue").value = b;
+  ["redValue", "greenValue", "blueValue"].forEach((id) => $("#" + id).oninput = () => {
+    item.color = `#${["redValue", "greenValue", "blueValue"].map((key) => Number($("#" + key).value).toString(16).padStart(2, "0")).join("")}`;
+    $("#selectedPaletteColor").textContent = `${item.code} · ${item.color}`;
+    $("#paletteColorPreview").style.backgroundColor = item.color;
+    savePalettes(); renderPaletteCards();
+  });
 }
 
 function escapeHtml(text) {
@@ -236,6 +286,7 @@ function setActiveColor(id) {
 function updateActiveLabel() {
   const item = paletteColor(state.activeColorId);
   $("#activeColorLabel").textContent = item ? `当前：${item.code}` : "尚未选择颜色";
+  $("#activeColorPreview").style.backgroundColor = item?.color || "transparent";
 }
 
 function updateUsedColors() {
@@ -325,6 +376,9 @@ $("#canvasStage").addEventListener("wheel", (event) => {
   setZoom(state.zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12));
 }, { passive: false });
 window.addEventListener("resize", () => { if (state.zoomMode === "fit") fitCanvas(); });
+new ResizeObserver(() => {
+  if (state.zoomMode === "fit") fitCanvas();
+}).observe($("#canvasStage"));
 
 $("#undoButton").addEventListener("click", () => {
   if (!state.undo.length) return;
@@ -337,12 +391,31 @@ $("#redoButton").addEventListener("click", () => {
   restore(state.redo.pop());
 });
 
-$("#addColorButton").addEventListener("click", () => {
-  const item = { id: uid(), code: `C${state.palette.length + 1}`, color: "#c65a3a", confidence: 0 };
-  state.palette.push(item);
-  state.activeColorId = item.id;
+$("#paletteSelector").addEventListener("change", (event) => {
+  state.activePaletteGroupId = event.target.value;
+  state.palette = state.paletteGroups.find((group) => group.id === state.activePaletteGroupId)?.colors || [];
+  state.activeColorId = state.palette[0]?.id || null;
   renderPalette();
   updateUsedColors();
+});
+$("#choosePaletteButton").addEventListener("click", () => { renderPalette(); $("#paletteEditorDialog").showModal(); });
+$("#closePaletteEditorButton").addEventListener("click", () => $("#paletteEditorDialog").close());
+$("#fillBackgroundButton").addEventListener("click", () => {
+  const item = paletteColor(state.activeColorId);
+  if (!item) return setStatus("请先选择一个色号。", true);
+  checkpoint();
+  state.backgroundColor = item.color;
+  state.strokes = state.strokes.filter((stroke) => stroke.colorId === item.id);
+  render();
+  updateUsedColors();
+  setStatus(`已用 ${item.code} 填充背景，并移除其他色号。`);
+});
+$("#paletteEditorName").addEventListener("input", (event) => {
+  const group = state.paletteGroups.find((item) => item.id === state.activePaletteGroupId);
+  if (!group) return;
+  group.name = event.target.value.trim() || "未命名画材";
+  savePalettes();
+  renderPalette();
 });
 
 $("#replaceButton").addEventListener("click", () => {
@@ -381,6 +454,7 @@ async function openLineArt() {
       updateHistoryButtons();
       $("#canvasEmpty").classList.add("hidden");
       $("#exportButton").disabled = false;
+      $("#lineDialog").close();
       setStatus(`已载入 ${data.name} · ${data.width} × ${data.height}`);
     };
     image.onerror = () => setStatus("浏览器无法解码这张图片。", true);
@@ -394,23 +468,61 @@ async function recognizePalette() {
   try {
     setStatus("正在识别色卡，这可能需要几秒…");
     const data = await api("/api/palette/recognize", { method: "POST", body: JSON.stringify({ path }) });
-    state.palette = data.colors.map((item) => ({ ...item, id: uid() }));
+    const name = $("#paletteName").value.trim() || path.split(/[\\/]/).pop().replace(/\.[^.]+$/, "") || "未命名画材";
+    const colors = data.colors.map((item) => ({ ...item, id: uid() }));
+    const group = { id: uid(), name, colors };
+    state.paletteGroups.push(group);
+    state.activePaletteGroupId = group.id;
+    state.palette = group.colors;
+    savePalettes();
     state.activeColorId = state.palette[0]?.id || null;
     renderPalette();
     updateUsedColors();
     render();
+    $("#paletteDialog").close();
     setStatus(data.warning || `识别到 ${state.palette.length} 个色号，请检查并纠正结果。`, Boolean(data.warning));
   } catch (error) { setStatus(error.message, true); }
 }
 
-$("#openLineButton").addEventListener("click", openLineArt);
+$("#openLineDialogButton").addEventListener("click", () => $("#lineDialog").showModal());
+$("#openLineButton").addEventListener("click", (event) => {
+  event.preventDefault();
+  openLineArt();
+});
 $("#clearLineButton").addEventListener("click", () => {
   state.lineImage = null;
   render();
   $("#canvasEmpty").classList.toggle("hidden", state.strokes.length > 0);
   setStatus("已移除线稿，当前使用空白画布。已有笔画已保留。");
 });
-$("#recognizeButton").addEventListener("click", recognizePalette);
+$("#openPaletteDialogButton").addEventListener("click", () => $("#paletteDialog").showModal());
+$("#recognizeButton").addEventListener("click", (event) => {
+  event.preventDefault();
+  recognizePalette();
+});
+$("#paletteTab").addEventListener("click", () => switchPaletteTab("palette"));
+$("#importPaletteTab").addEventListener("click", () => switchPaletteTab("import"));
+function switchPaletteTab(tab) {
+  const importing = tab === "import";
+  $("#paletteSection").hidden = importing;
+  $("#paletteImportSection").hidden = !importing;
+  $("#paletteTab").classList.toggle("active", !importing);
+  $("#importPaletteTab").classList.toggle("active", importing);
+}
+function switchTopPage(page) {
+  const palette = page === "palette";
+  document.body.classList.toggle("palette-page", palette);
+  $("#paintPageTab").classList.toggle("active", !palette);
+  $("#palettePageTab").classList.toggle("active", palette);
+  if (palette) {
+    $("#paletteSection").hidden = false;
+    $("#paletteImportSection").hidden = false;
+  } else {
+    switchPaletteTab("palette");
+  }
+}
+$("#paintPageTab").addEventListener("click", () => switchTopPage("paint"));
+$("#palettePageTab").addEventListener("click", () => switchTopPage("palette"));
 
 function setupAutocomplete(field) {
   const input = field.querySelector("input");
@@ -483,15 +595,17 @@ $("#confirmExport").addEventListener("click", async (event) => {
 });
 
 async function initialize() {
-  render();
-  scheduleFit();
-  renderPalette();
+    render();
+    scheduleFit();
+    loadPalettes();
+    renderPalette();
   updateUsedColors();
   try {
     state.config = await api("/api/config");
     const slash = (path) => path.endsWith("/") ? path : `${path}/`;
     $("#linePath").value = slash(state.config.paths.line_art_import);
     $("#palettePath").value = slash(state.config.paths.palette_import);
+    $("#paletteName").value = "";
     $("#exportLocation").textContent = `保存到：${state.config.paths.finished_export}`;
     $("#exportButton").disabled = false;
     setStatus(`配置：${state.config.configPath}`);

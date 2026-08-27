@@ -41,8 +41,9 @@ h2 { margin: 0 0 12px; font-size: 14px; }
 
 main {
   height: calc(100vh - 72px);
+  min-height: 0;
   display: grid;
-  grid-template-columns: 260px minmax(460px, 1fr) 220px;
+  grid-template-columns: 520px minmax(460px, 1fr) 220px;
 }
 
 .panel {
@@ -83,6 +84,25 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .icon-button { min-height: 28px; padding: 2px 9px; font-size: 18px; }
 
 .header-actions { display: flex; gap: 8px; }
+.top-tabs { display: flex; gap: 4px; margin-right: 10px; }
+.top-tab { min-height: 30px; padding: 4px 10px; color: #bdb5a9; border-color: transparent; background: transparent; }
+.top-tab.active { color: #fff; border-color: #6d665e; background: #49443e; }
+body:not(.palette-page) .palette-tabs { display: none; }
+.palette-page main { grid-template-columns: minmax(0, 1fr) 280px; }
+.palette-page .workspace, .palette-page #lineArtSection { display: none; }
+.palette-page .right-panel { display: block; }
+.palette-page .right-panel section:not(#paletteRgbPanel) { display: none; }
+.palette-page .left-panel { width: min(760px, 100%); border: 0; margin: 0 auto; }
+.palette-page .palette-tabs { display: none; }
+.palette-page #paletteImportSection:not([hidden]), .palette-page #paletteSection:not([hidden]) { display: block; }
+.left-panel .palette-section > h2,
+.left-panel .palette-section .palette-card strong,
+.left-panel .palette-section .palette-card > button { display: none; }
+.left-panel .palette-section .palette-card-actions { display: none; }
+.palette-page .left-panel .palette-section > h2,
+.palette-page .left-panel .palette-section .palette-card strong,
+.palette-page .left-panel .palette-section .palette-card > button { display: block; }
+.palette-page .left-panel .palette-section .palette-card-actions { display: flex; }
 .path-field { position: relative; }
 .path-field input { font: 12px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .suggestions {
@@ -103,10 +123,33 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .suggestion.active { background: #f3ded6; }
 
 .section-title { display: flex; align-items: center; justify-content: space-between; }
+.section-actions { display: flex; align-items: center; gap: 5px; }
+.palette-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 0 0 16px; }
+.tab-button { min-height: 30px; padding: 4px 6px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-size: 12px; }
+.tab-button.active { border-bottom-color: var(--accent); color: var(--ink); font-weight: 600; }
+.section-actions button { min-height: 28px; padding: 3px 7px; font-size: 11px; }
 .palette { display: grid; gap: 7px; }
+.palette-group-name { margin: 8px 0 0; color: var(--muted); font-size: 12px; font-weight: 600; }
+.palette-manager-dialog { width: min(520px, 90vw); }
+.palette-editor-dialog { width: min(430px, 90vw); }
+.palette-cards { display: grid; gap: 10px; }
+.palette-card { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.palette-section .palette-cards { margin-top: 10px; }
+.palette-card > button { grid-column: 2; grid-row: 1; }
+.palette-card-actions { grid-column: 2; grid-row: 1; display: flex; gap: 4px; }
+.palette-card-actions button { min-height: 28px; padding: 3px 7px; font-size: 11px; }
+.palette-card-colors { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.palette-card-color { min-height: 34px; display: grid; place-items: center; border: 1px solid rgba(0, 0, 0, .18); border-radius: 4px; color: rgba(0, 0, 0, .68); font: 11px ui-monospace, monospace; text-shadow: 0 1px rgba(255, 255, 255, .5); }
+.palette-page #paletteRgbPanel { display: block; }
+body:not(.palette-page) #paletteRgbPanel { display: none !important; }
+body:not(.palette-page) .palette-section,
+body:not(.palette-page) .palette-section .palette-cards,
+body:not(.palette-page) .palette-section .palette-card-colors { display: block; }
+body:not(.palette-page) .palette-section .palette-card-colors { display: grid; }
+.palette-color-preview { width: 100%; height: 72px; margin: 8px 0 12px; border: 1px solid rgba(0, 0, 0, .18); border-radius: 7px; background: #eee; }
 .palette-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 32px;
+  grid-template-columns: 28px minmax(0, 1fr);
   gap: 6px;
   align-items: center;
   padding: 5px;
@@ -114,12 +157,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   border-radius: 7px;
 }
 .palette-row.active { border-color: var(--accent); background: #fbede8; }
-.palette-row input[type="color"] { width: 28px; height: 28px; padding: 0; border: 0; background: none; }
-.palette-row input[type="text"] { min-height: 30px; padding: 4px 6px; }
-.palette-row .delete-color { padding: 0; min-height: 28px; color: var(--muted); border: 0; background: transparent; }
+.palette-swatch { width: 28px; height: 28px; border: 1px solid rgba(0, 0, 0, .16); border-radius: 5px; }
+.palette-code { align-self: center; font: 13px ui-monospace, monospace; }
 .empty-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 
-.workspace { min-width: 0; display: flex; flex-direction: column; background: #d9d3ca; }
+.workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #d9d3ca; }
 .canvas-toolbar {
   height: 50px;
   flex: 0 0 auto;
@@ -137,6 +179,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .zoom-controls button { min-height: 28px; padding: 3px 8px; }
 .zoom-controls output { width: 48px; color: var(--muted); text-align: center; font-size: 12px; }
 #activeColorLabel { font-weight: 600; }
+.active-color { display: inline-flex; align-items: center; gap: 6px; }
+.active-color i { width: 18px; height: 18px; border: 1px solid rgba(0, 0, 0, .2); border-radius: 4px; background: transparent; }
 .canvas-stage {
   position: relative;
   min-height: 0;
@@ -177,7 +221,9 @@ dialog::backdrop { background: rgba(28, 25, 21, .48); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 dialog .quiet { color: var(--ink); border-color: #cfc8be; }
 .path-note { overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
+.import-dialog { width: min(620px, 90vw); }
+.import-dialog .path-field input { min-height: 42px; font-size: 13px; }
 
 @media (max-width: 1100px) {
-  main { grid-template-columns: 230px minmax(430px, 1fr) 200px; }
+  main { grid-template-columns: 460px minmax(430px, 1fr) 200px; }
 }

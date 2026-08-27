@@ -13,6 +13,10 @@
       <p>先试颜色，再碰画纸。</p>
     </div>
     <div class="header-actions">
+      <nav class="top-tabs" aria-label="主页面">
+        <button id="paintPageTab" class="top-tab active">绘画</button>
+        <button id="palettePageTab" class="top-tab">画材</button>
+      </nav>
       <button id="undoButton" class="quiet" disabled>撤销</button>
       <button id="redoButton" class="quiet" disabled>重做</button>
       <button id="exportButton" class="primary" disabled>导出 PNG</button>
@@ -21,32 +25,26 @@
 
   <main>
     <aside class="panel left-panel">
-      <section>
+      <section id="lineArtSection">
         <h2>1. 线稿（可选）</h2>
-        <div class="path-field" data-kind="line_art">
-          <input id="linePath" autocomplete="off" spellcheck="false" aria-label="线稿路径">
-          <div class="suggestions" role="listbox"></div>
-        </div>
-        <button id="openLineButton" class="wide">打开线稿</button>
+        <button id="openLineDialogButton" class="wide">导入线稿</button>
         <button id="clearLineButton" class="wide">使用空白画布</button>
       </section>
 
-      <section>
+      <div class="palette-tabs" role="tablist" aria-label="调色板功能">
+        <button id="paletteTab" class="tab-button active" role="tab">调色板</button>
+        <button id="importPaletteTab" class="tab-button" role="tab">导入色卡</button>
+      </div>
+      <section id="paletteImportSection" hidden>
         <h2>2. 导入色卡</h2>
-        <div class="path-field" data-kind="palette">
-          <input id="palettePath" autocomplete="off" spellcheck="false" aria-label="色卡路径">
-          <div class="suggestions" role="listbox"></div>
-        </div>
-        <button id="recognizeButton" class="wide">识别色号</button>
+        <button id="openPaletteDialogButton" class="wide">导入色卡并识别</button>
       </section>
 
-      <section class="palette-section">
-        <div class="section-title">
-          <h2>色板</h2>
-          <button id="addColorButton" class="icon-button" title="添加颜色">＋</button>
-        </div>
-        <div id="palette" class="palette"></div>
-        <p id="paletteEmpty" class="empty-note">导入色卡，或手动添加颜色。</p>
+      <section id="paletteSection" class="palette-section">
+        <h2>调色板</h2>
+        <select id="paletteSelector" aria-label="选择画材"></select>
+        <div id="paletteCards" class="palette-cards"></div>
+        <p id="paletteEmpty" class="empty-note">还没有导入画材。</p>
       </section>
     </aside>
 
@@ -62,7 +60,9 @@
           <output id="zoomOutput">100%</output>
           <button id="zoomInButton" title="放大">＋</button>
         </div>
-        <span id="activeColorLabel">尚未选择颜色</span>
+        <span class="active-color"><i id="activeColorPreview"></i><span id="activeColorLabel">尚未选择颜色</span></span>
+        <button id="fillBackgroundButton">背景填充</button>
+        <button id="choosePaletteButton">选择色号</button>
       </div>
       <div id="canvasStage" class="canvas-stage">
         <canvas id="paintCanvas" width="1200" height="1200"></canvas>
@@ -75,6 +75,14 @@
     </section>
 
     <aside class="panel right-panel">
+      <section id="paletteRgbPanel" hidden>
+        <h2>颜色调整</h2>
+        <div id="paletteColorPreview" class="palette-color-preview" aria-label="颜色预览"></div>
+        <p id="selectedPaletteColor" class="path-note">点击一个色号进行调整</p>
+        <label class="stacked">R <input id="redValue" type="number" min="0" max="255"></label>
+        <label class="stacked">G <input id="greenValue" type="number" min="0" max="255"></label>
+        <label class="stacked">B <input id="blueValue" type="number" min="0" max="255"></label>
+      </section>
       <section>
         <h2>画布比例</h2>
         <div id="papers" class="paper-grid">
@@ -115,6 +123,46 @@
         <button id="confirmExport" value="default" class="primary">导出</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="lineDialog" class="import-dialog">
+    <form method="dialog">
+      <h2>导入线稿</h2>
+      <div class="path-field" data-kind="line_art">
+        <input id="linePath" autocomplete="off" spellcheck="false" aria-label="线稿路径">
+        <div class="suggestions" role="listbox"></div>
+      </div>
+      <div class="dialog-actions">
+        <button value="cancel" class="quiet">取消</button>
+        <button id="openLineButton" value="default" class="primary">打开线稿</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="paletteDialog" class="import-dialog">
+    <form method="dialog">
+      <h2>导入色卡</h2>
+      <label class="stacked">画材名称
+        <input id="paletteName" autocomplete="off" aria-label="画材名称">
+      </label>
+      <div class="path-field" data-kind="palette">
+        <input id="palettePath" autocomplete="off" spellcheck="false" aria-label="色卡路径">
+        <div class="suggestions" role="listbox"></div>
+      </div>
+      <div class="dialog-actions">
+        <button value="cancel" class="quiet">取消</button>
+        <button id="recognizeButton" value="default" class="primary">识别色号</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="paletteEditorDialog" class="palette-editor-dialog">
+    <label class="stacked">调色板名称
+      <input id="paletteEditorName" autocomplete="off" aria-label="调色板名称">
+    </label>
+    <div id="palette"></div>
+    <p class="empty-note">暂无色号。</p>
+    <div class="dialog-actions"><button id="closePaletteEditorButton" class="quiet">完成</button></div>
   </dialog>
 
   <script src="/app.js" defer></script>

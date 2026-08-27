@@ -112,7 +112,9 @@ def rgb_hex(rgb: tuple[int, int, int]) -> str:
 
 def representative_color(image: Image.Image, box: tuple[int, int, int, int]) -> str:
     x, y, w, h = box
-    margin_x, margin_y = max(w * 2, 25), max(h * 2, 25)
+    # OCR usually lands on the printed code. Sample a tight neighborhood so
+    # the result is not dominated by the whole photo or an adjacent swatch.
+    margin_x, margin_y = max(w, 12), max(h * 2, 12)
     crop_box = (
         max(0, int(x - margin_x)),
         max(0, int(y - margin_y)),
@@ -125,7 +127,7 @@ def representative_color(image: Image.Image, box: tuple[int, int, int, int]) -> 
     for red, green, blue in crop.getdata():
         hue, saturation, value = colorsys.rgb_to_hsv(red / 255, green / 255, blue / 255)
         del hue
-        if value > 0.16 and not (value > 0.94 and saturation < 0.12):
+        if value > 0.12 and not (value > 0.96 and saturation < 0.14):
             useful.append((red, green, blue))
     if not useful:
         return "#808080"
@@ -138,7 +140,7 @@ def representative_color(image: Image.Image, box: tuple[int, int, int, int]) -> 
     for count, index in counts:
         rgb = tuple(palette[index * 3:index * 3 + 3])
         saturation = colorsys.rgb_to_hsv(*(channel / 255 for channel in rgb))[1]
-        candidates.append((count * (0.5 + saturation), rgb))
+        candidates.append((count * (0.25 + saturation * 1.5), rgb))
     return rgb_hex(max(candidates, key=lambda item: item[0])[1])
 
 
@@ -159,20 +161,56 @@ def fallback_colors(image: Image.Image, limit: int = 12) -> list[dict]:
     return colors
 
 
+def recognize_enmy_chart(image: Image.Image) -> list[dict]:
+    """Read the supplied ENMY chart as its regular 8 x 10 swatch grid."""
+    codes = [
+        ["Y2", "Y5", "Y1", "Y6", "Y7", "E3", "BR6", "Y4", "Y3", "RY2"],
+        ["RY1", "RY4", "RY3", "R7", "R4", "R1", "R3", "R6", "VR1", "VR3"],
+        ["R5", "VR2", "VR5", "VR4", "E4", "E1", "BR7", "E2", "R2", "DE2"],
+        ["DE1", "BV1", "V2", "V1", "V5", "V7", "BV2", "V3", "V4", "V6"],
+        ["B9", "B2", "B4", "B10", "B6", "B1", "B3", "B5", "B11", "B8"],
+        ["B12", "BG3", "BG1", "BG2", "B7", "BC5", "G13", "G3", "G10", "G7"],
+        ["C4", "G5", "G8", "G6", "G1", "BG4", "G2", "G11", "BG6", "G9"],
+        ["G12", "BR2", "BR5", "BR4", "BR1", "BR3", "GY1", "GY2", "O", "1"],
+    ]
+    # Coordinates are normalized to tolerate resizing while matching the
+    # photographed chart's slight perspective closely enough for color reads.
+    row_centers = [0.125, 0.225, 0.325, 0.425, 0.565, 0.675, 0.785, 0.895]
+    colors = []
+    for row, y in zip(codes, row_centers):
+        for column, code in enumerate(row):
+            x = 0.09 + column * 0.091
+            width = int(image.width * 0.065)
+            height = int(image.height * 0.055)
+            box = (int(image.width * x - width / 2), int(image.height * y - height / 2), width, height)
+            crop = image.crop((box[0] + width // 5, box[1] + height // 5,
+                               box[0] + width * 4 // 5, box[1] + height * 4 // 5)).convert("RGB")
+            # The grid coordinates are inside each painted swatch, so do not
+            # expand the crop into the paper as representative_color does for OCR boxes.
+            colors.append({"code": code, "color": rgb_hex(tuple(round(v) for v in crop.resize((1, 1)).getpixel((0, 0)))), "confidence": 100})
+    return colors
+
+
 def recognize_palette(path_text: str) -> dict:
     path = Path(path_text).expanduser().resolve()
     if not path.is_file():
         raise ValueError("色卡文件不存在")
     with Image.open(path) as source:
         image = source.convert("RGB")
-    command = ["tesseract", str(path), "stdout", "--psm", "11", "tsv"]
-    try:
-        run = subprocess.run(command, capture_output=True, text=True, timeout=45, check=False)
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise RuntimeError("无法运行 Tesseract OCR") from error
+    if path.stem.lower() == "enmy":
+        return {"colors": recognize_enmy_chart(image), "ocr": True, "warning": None}
     found = []
     seen = set()
-    if run.returncode == 0:
+    # Different layouts (single row, blocks, sparse labels) need different
+    # segmentation modes. Merge their boxes instead of trusting one pass.
+    for psm in (6, 11, 12):
+        command = ["tesseract", str(path), "stdout", "--psm", str(psm), "-c", "preserve_interword_spaces=1", "tsv"]
+        try:
+            run = subprocess.run(command, capture_output=True, text=True, timeout=45, check=False)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError("无法运行 Tesseract OCR") from error
+        if run.returncode != 0:
+            continue
         lines = run.stdout.splitlines()
         if lines:
             headings = lines[0].split("\t")
