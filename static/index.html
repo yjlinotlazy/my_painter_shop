@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>我的配色小铺</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=4">
 </head>
 <body>
   <header>
@@ -26,7 +26,6 @@
   <main>
     <aside class="panel left-panel">
       <section id="lineArtSection">
-        <h2>1. 线稿（可选）</h2>
         <button id="openLineDialogButton" class="wide">导入线稿</button>
         <button id="clearLineButton" class="wide">使用空白画布</button>
       </section>
@@ -36,7 +35,6 @@
         <button id="importPaletteTab" class="tab-button" role="tab">导入色卡</button>
       </div>
       <section id="paletteImportSection" hidden>
-        <h2>2. 导入色卡</h2>
         <button id="openPaletteDialogButton" class="wide">导入色卡并识别</button>
       </section>
 
@@ -62,7 +60,6 @@
         </div>
         <span class="active-color"><i id="activeColorPreview"></i><span id="activeColorLabel">尚未选择颜色</span></span>
         <button id="fillBackgroundButton">背景填充</button>
-        <button id="choosePaletteButton">选择色号</button>
       </div>
       <div id="canvasStage" class="canvas-stage">
         <canvas id="paintCanvas" width="1200" height="1200"></canvas>
@@ -75,13 +72,17 @@
     </section>
 
     <aside class="panel right-panel">
-      <section id="paletteRgbPanel" hidden>
+      <section id="paletteRgbPanel">
         <h2>颜色调整</h2>
         <div id="paletteColorPreview" class="palette-color-preview" aria-label="颜色预览"></div>
         <p id="selectedPaletteColor" class="path-note">点击一个色号进行调整</p>
         <label class="stacked">R <input id="redValue" type="number" min="0" max="255"></label>
         <label class="stacked">G <input id="greenValue" type="number" min="0" max="255"></label>
         <label class="stacked">B <input id="blueValue" type="number" min="0" max="255"></label>
+        <div class="color-wheel-label">颜色选择器</div>
+        <canvas id="paletteColorWheel" class="color-wheel" width="220" height="220" role="slider" aria-label="颜色色轮"></canvas>
+        <label class="stacked">明度 <input id="paletteBrightness" type="range" min="0" max="100" value="100"></label>
+        <button id="savePaletteColorButton" class="primary wide">保存颜色</button>
       </section>
       <section>
         <h2>画布比例</h2>
@@ -165,6 +166,6 @@
     <div class="dialog-actions"><button id="closePaletteEditorButton" class="quiet">完成</button></div>
   </dialog>
 
-  <script src="/app.js" defer></script>
+  <script src="/app.js?v=4" defer></script>
 </body>
 </html>

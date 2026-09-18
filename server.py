@@ -12,10 +12,13 @@ import mimetypes
 import os
 import re
 import subprocess
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+from server_logging import CountingWriter, RequestLogger, content_length
 
 import yaml
 from PIL import Image
@@ -24,6 +27,7 @@ from PIL import Image
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
 CONFIG_PATH = Path.home() / ".config" / "my_painter_shop" / "config.yaml"
+PALETTES_PATH = CONFIG_PATH.parent / "palettes.json"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 DEFAULT_CONFIG = {
     "paths": {
@@ -112,14 +116,14 @@ def rgb_hex(rgb: tuple[int, int, int]) -> str:
 
 def representative_color(image: Image.Image, box: tuple[int, int, int, int]) -> str:
     x, y, w, h = box
-    # OCR usually lands on the printed code. Sample a tight neighborhood so
-    # the result is not dominated by the whole photo or an adjacent swatch.
-    margin_x, margin_y = max(w, 12), max(h * 2, 12)
+    # Labels are normally below their swatch. Prefer the area above the OCR
+    # box; this avoids averaging the label, border, and surrounding paper.
+    margin_x, margin_y = max(w * 2, 20), max(h, 12)
     crop_box = (
         max(0, int(x - margin_x)),
-        max(0, int(y - margin_y)),
+        max(0, int(y - h * 7)),
         min(image.width, int(x + w + margin_x)),
-        min(image.height, int(y + h + margin_y)),
+        min(image.height, int(y - h)),
     )
     crop = image.crop(crop_box).convert("RGB")
     crop.thumbnail((180, 180))
@@ -258,6 +262,26 @@ def save_export(config: dict, filename: str, data_url: str) -> dict:
 
 class AppHandler(BaseHTTPRequestHandler):
     server_version = "MyPainterShop/0.1"
+    request_logger = RequestLogger(Path(__file__).resolve().parent, "paint_shop")
+
+    def handle_one_request(self) -> None:
+        started_at = time.time()
+        self._telemetry_status = HTTPStatus.INTERNAL_SERVER_ERROR
+        original_wfile = self.wfile
+        counted_wfile = CountingWriter(original_wfile)
+        self.wfile = counted_wfile
+        try:
+            super().handle_one_request()
+        finally:
+            self.wfile = original_wfile
+            try:
+                self.request_logger.record(target=getattr(self, "path", ""), method=getattr(self, "command", "UNKNOWN"), status=getattr(self, "_telemetry_status", 500), request_size=content_length(self.headers), response_size=counted_wfile.bytes_written, started_at=started_at)
+            except Exception:
+                pass
+
+    def send_response(self, code, message=None):
+        self._telemetry_status = int(code)
+        super().send_response(code, message)
 
     def log_message(self, fmt: str, *args) -> None:
         print(f"[{self.log_date_time_string()}] {fmt % args}")
@@ -284,6 +308,12 @@ class AppHandler(BaseHTTPRequestHandler):
                 expanded = {key: str(Path(value).expanduser()) for key, value in config["paths"].items()}
                 self.send_json({"paths": expanded, "configPath": str(CONFIG_PATH)})
                 return
+            if parsed.path == "/api/palettes":
+                try:
+                    self.send_json(json.loads(PALETTES_PATH.read_text(encoding="utf-8")))
+                except (FileNotFoundError, json.JSONDecodeError):
+                    self.send_json([])
+                return
             if parsed.path == "/api/files/complete":
                 query = parse_qs(parsed.query)
                 kind = query.get("kind", ["line_art"])[0]
@@ -302,6 +332,10 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.send_json(image_data(str(payload.get("path", ""))))
             elif parsed.path == "/api/palette/recognize":
                 self.send_json(recognize_palette(str(payload.get("path", ""))))
+            elif parsed.path == "/api/palettes":
+                PALETTES_PATH.parent.mkdir(parents=True, exist_ok=True)
+                PALETTES_PATH.write_text(json.dumps(payload.get("palettes", []), ensure_ascii=False), encoding="utf-8")
+                self.send_json({"ok": True})
             elif parsed.path == "/api/export":
                 self.send_json(save_export(ensure_config(), str(payload.get("filename", "")), str(payload.get("dataUrl", ""))))
             else:

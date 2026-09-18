@@ -11,6 +11,7 @@ const state = {
   palette: [],
   paletteGroups: [],
   activePaletteGroupId: null,
+  reimportGroup: null,
   activeColorId: null,
   strokes: [],
   undo: [],
@@ -20,6 +21,7 @@ const state = {
   paper: "square",
   zoom: 1,
   zoomMode: "fit",
+  colorDraft: null,
   backgroundColor: "#ffffff",
 };
 
@@ -31,6 +33,7 @@ function savePalettes() {
   try {
     localStorage.setItem(PALETTE_STORAGE_KEY, JSON.stringify(state.paletteGroups));
   } catch { /* local storage may be unavailable */ }
+  fetch("/api/palettes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ palettes: state.paletteGroups }) }).catch(() => {});
 }
 
 function loadPalettes() {
@@ -42,6 +45,26 @@ function loadPalettes() {
     state.palette = state.paletteGroups[0]?.colors || [];
     state.activeColorId = state.palette[0]?.id || null;
   } catch { /* ignore invalid or unavailable saved data */ }
+}
+
+async function loadServerPalettes() {
+  try {
+    const response = await fetch("/api/palettes");
+    const saved = await response.json();
+    if (!Array.isArray(saved)) return;
+    let local = [];
+    try { local = JSON.parse(localStorage.getItem(PALETTE_STORAGE_KEY) || "[]"); } catch { /* ignore */ }
+    if (!saved.length && local.length) {
+      state.paletteGroups = local.filter((group) => group && Array.isArray(group.colors));
+      state.activePaletteGroupId = state.paletteGroups[0]?.id || null;
+      state.palette = state.paletteGroups[0]?.colors || [];
+      savePalettes();
+      return;
+    }
+    state.paletteGroups = saved.filter((group) => group && Array.isArray(group.colors));
+    state.activePaletteGroupId = state.paletteGroups[0]?.id || null;
+    state.palette = state.paletteGroups[0]?.colors || [];
+  } catch { loadPalettes(); }
 }
 
 async function api(path, options = {}) {
@@ -238,10 +261,16 @@ function renderPaletteCards() {
   groups.forEach((group) => {
     const card = document.createElement("div");
     card.className = "palette-card";
-    card.innerHTML = `<strong>${escapeHtml(group.name)}</strong><span class="palette-card-actions"><button type="button" class="rename-palette">重命名</button><button type="button" class="delete-palette">删除</button></span><div class="palette-card-colors">${group.colors.map((item) => `<button type="button" class="palette-card-color" style="background:${item.color}" title="${escapeHtml(item.code)}">${escapeHtml(item.code)}</button>`).join("")}</div>`;
+    card.innerHTML = `<strong>${escapeHtml(group.name)}</strong><span class="palette-card-actions"><button type="button" class="rename-palette">重命名</button><button type="button" class="reimport-palette">重新导入</button><button type="button" class="delete-palette">删除</button></span><div class="palette-card-colors">${group.colors.map((item) => `<button type="button" class="palette-card-color" style="background:${item.color}" title="${escapeHtml(item.code)}">${escapeHtml(item.code)}</button>`).join("")}</div>`;
     card.querySelector(".rename-palette").addEventListener("click", () => {
       const name = window.prompt("调色板名称", group.name);
       if (name?.trim()) { group.name = name.trim(); savePalettes(); renderPalette(); }
+    });
+    card.querySelector(".reimport-palette").addEventListener("click", async () => {
+      state.reimportGroup = group;
+      $("#paletteName").value = group.name;
+      $("#palettePath").value = group.sourcePath || "";
+      $("#paletteDialog").showModal();
     });
     card.querySelector(".delete-palette").addEventListener("click", () => {
       if (!window.confirm(`确定删除“${group.name}”吗？`)) return;
@@ -257,19 +286,71 @@ function renderPaletteCards() {
 
 function selectPaletteColor(item) {
   state.activeColorId = item.id;
+  state.colorDraft = item.color;
   updateActiveLabel();
   renderPaletteCards();
-  $("#paletteRgbPanel").hidden = false;
   $("#selectedPaletteColor").textContent = `${item.code} · ${item.color}`;
   $("#paletteColorPreview").style.backgroundColor = item.color;
   const [r, g, b] = item.color.match(/[a-f\d]{2}/gi).map((value) => parseInt(value, 16));
   $("#redValue").value = r; $("#greenValue").value = g; $("#blueValue").value = b;
+  drawColorWheel();
   ["redValue", "greenValue", "blueValue"].forEach((id) => $("#" + id).oninput = () => {
-    item.color = `#${["redValue", "greenValue", "blueValue"].map((key) => Number($("#" + key).value).toString(16).padStart(2, "0")).join("")}`;
-    $("#selectedPaletteColor").textContent = `${item.code} · ${item.color}`;
-    $("#paletteColorPreview").style.backgroundColor = item.color;
-    savePalettes(); renderPaletteCards();
+    state.colorDraft = `#${["redValue", "greenValue", "blueValue"].map((key) => Number($("#" + key).value).toString(16).padStart(2, "0")).join("")}`;
+    $("#selectedPaletteColor").textContent = `${item.code} · ${state.colorDraft}`;
+    $("#paletteColorPreview").style.backgroundColor = state.colorDraft;
   });
+}
+
+function drawColorWheel() {
+  const canvas = $("#paletteColorWheel"), context = canvas.getContext("2d"), size = canvas.width, center = size / 2, radius = center - 4;
+  const image = context.createImageData(size, size);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const dx = x - center, dy = y - center, distance = Math.sqrt(dx * dx + dy * dy), index = (y * size + x) * 4;
+    if (distance > radius) { image.data[index + 3] = 0; continue; }
+    const hue = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+    const rgb = hsvToRgb(hue, distance / radius, 1);
+    image.data.set([...rgb, 255], index);
+  }
+  context.putImageData(image, 0, 0);
+}
+function hsvToRgb(h, s, v) {
+  const f = (n) => { const k = (n + h / 30) % 12; return v - v * s * Math.max(Math.min(k - 3, 9 - k, 1), -1); };
+  return [f(0), f(8), f(4)].map((value) => Math.round(value * 255));
+}
+drawColorWheel();
+$("#paletteColorWheel").addEventListener("click", (event) => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const canvas = event.currentTarget;
+  const x = Math.round((event.clientX - rect.left) * canvas.width / rect.width);
+  const y = Math.round((event.clientY - rect.top) * canvas.height / rect.height);
+  const pixel = canvas.getContext("2d").getImageData(Math.max(0, Math.min(canvas.width - 1, x)), Math.max(0, Math.min(canvas.height - 1, y)), 1, 1).data;
+  const item = paletteColor(state.activeColorId);
+  if (!item) return;
+  if (pixel[3] === 0) return;
+  $("#paletteBrightness").value = 100;
+  const rgb = [pixel[0], pixel[1], pixel[2]];
+  state.colorDraft = `#${rgb.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+  selectPaletteColor({ ...item, color: state.colorDraft });
+});
+$("#paletteBrightness").addEventListener("input", () => {
+  const item = paletteColor(state.activeColorId);
+  if (!item || !state.colorDraft) return;
+  const rgb = state.colorDraft.match(/[a-f\d]{2}/gi).map((value) => parseInt(value, 16));
+  const value = Number($("#paletteBrightness").value) / 100;
+  const scaled = rgb.map((channel) => Math.round(channel * value));
+  state.colorDraft = `#${scaled.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+  selectPaletteColor({ ...item, color: state.colorDraft });
+});
+$("#savePaletteColorButton").addEventListener("click", () => {
+  const item = paletteColor(state.activeColorId);
+  if (!item || !state.colorDraft) return;
+  item.color = state.colorDraft;
+  savePalettes(); renderPaletteCards();
+  setStatus(`已保存 ${item.code} 的颜色。`);
+});
+function hslToRgb(h, s, l) {
+  const f = (n) => { const k = (n + h * 12) % 12; return l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+  return [f(0), f(8), f(4)].map((v) => Math.round(v * 255));
 }
 
 function escapeHtml(text) {
@@ -398,7 +479,7 @@ $("#paletteSelector").addEventListener("change", (event) => {
   renderPalette();
   updateUsedColors();
 });
-$("#choosePaletteButton").addEventListener("click", () => { renderPalette(); $("#paletteEditorDialog").showModal(); });
+$("#choosePaletteButton")?.addEventListener("click", () => { renderPalette(); $("#paletteEditorDialog").showModal(); });
 $("#closePaletteEditorButton").addEventListener("click", () => $("#paletteEditorDialog").close());
 $("#fillBackgroundButton").addEventListener("click", () => {
   const item = paletteColor(state.activeColorId);
@@ -470,8 +551,12 @@ async function recognizePalette() {
     const data = await api("/api/palette/recognize", { method: "POST", body: JSON.stringify({ path }) });
     const name = $("#paletteName").value.trim() || path.split(/[\\/]/).pop().replace(/\.[^.]+$/, "") || "未命名画材";
     const colors = data.colors.map((item) => ({ ...item, id: uid() }));
-    const group = { id: uid(), name, colors };
-    state.paletteGroups.push(group);
+    const group = state.reimportGroup || { id: uid(), name, sourcePath: path, colors: [] };
+    group.name = name;
+    group.sourcePath = path;
+    group.colors = colors;
+    if (!state.reimportGroup) state.paletteGroups.push(group);
+    state.reimportGroup = null;
     state.activePaletteGroupId = group.id;
     state.palette = group.colors;
     savePalettes();
@@ -495,7 +580,7 @@ $("#clearLineButton").addEventListener("click", () => {
   $("#canvasEmpty").classList.toggle("hidden", state.strokes.length > 0);
   setStatus("已移除线稿，当前使用空白画布。已有笔画已保留。");
 });
-$("#openPaletteDialogButton").addEventListener("click", () => $("#paletteDialog").showModal());
+$("#openPaletteDialogButton").addEventListener("click", () => { state.reimportGroup = null; $("#paletteDialog").showModal(); });
 $("#recognizeButton").addEventListener("click", (event) => {
   event.preventDefault();
   recognizePalette();
@@ -597,7 +682,7 @@ $("#confirmExport").addEventListener("click", async (event) => {
 async function initialize() {
     render();
     scheduleFit();
-    loadPalettes();
+    await loadServerPalettes();
     renderPalette();
   updateUsedColors();
   try {
