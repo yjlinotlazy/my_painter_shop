@@ -3,6 +3,7 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -13,13 +14,21 @@ class ServerTests(unittest.TestCase):
     def test_ensure_config_creates_and_merges_defaults(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.yaml"
-            config = server.ensure_config(path)
+            mock_path = "/tmp/mock-painter-shop"
+            mock_defaults = {"paths": {
+                "palette_import": mock_path,
+                "line_art_import": mock_path,
+                "finished_export": mock_path,
+            }}
+            with patch.object(server, "DEFAULT_CONFIG", mock_defaults):
+                config = server.ensure_config(path)
             self.assertTrue(path.exists())
-            self.assertEqual(config["paths"]["palette_import"], "/home/yli/Dropbox/Comics/PaintShop")
+            self.assertEqual(config["paths"]["palette_import"], mock_path)
             path.write_text("paths:\n  line_art_import: /tmp/lines\n", encoding="utf-8")
-            config = server.ensure_config(path)
+            with patch.object(server, "DEFAULT_CONFIG", mock_defaults):
+                config = server.ensure_config(path)
             self.assertEqual(config["paths"]["line_art_import"], "/tmp/lines")
-            self.assertEqual(config["paths"]["finished_export"], "/home/yli/Dropbox/Comics/PaintShop")
+            self.assertEqual(config["paths"]["finished_export"], mock_path)
 
     def test_completion_is_case_insensitive(self):
         with tempfile.TemporaryDirectory() as directory:

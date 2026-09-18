@@ -31,9 +31,9 @@ PALETTES_PATH = CONFIG_PATH.parent / "palettes.json"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 DEFAULT_CONFIG = {
     "paths": {
-        "palette_import": "/home/yli/Dropbox/Comics/PaintShop",
-        "line_art_import": "/home/yli/Dropbox/Comics/PaintShop",
-        "finished_export": "/home/yli/Dropbox/Comics/PaintShop",
+        "palette_import": "/path/to/painter-shop",
+        "line_art_import": "/path/to/painter-shop",
+        "finished_export": "/path/to/painter-shop",
     }
 }
 

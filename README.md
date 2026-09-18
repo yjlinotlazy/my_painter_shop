@@ -17,9 +17,9 @@ python3 server.py
 
 ```yaml
 paths:
-  palette_import: /home/yli/Dropbox/Comics/PaintShop
-  line_art_import: /home/yli/Dropbox/Comics/PaintShop
-  finished_export: /home/yli/Dropbox/Comics/PaintShop
+  palette_import: /path/to/painter-shop
+  line_art_import: /path/to/painter-shop
+  finished_export: /path/to/painter-shop
 ```
 
 这三个值分别控制色卡、线稿的路径补全起点，以及完成图的默认导出目录。修改配置后刷新页面即可。
